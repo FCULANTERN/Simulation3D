@@ -12,9 +12,11 @@ public class ScenesImporter : MonoBehaviour
     public Material vertexColorMaterial;
 
     [Header("Transform 設定")]
-    public Vector3 position = new Vector3(-1.3f, 0f, -1.6f);
-    public Vector3 rotation = new Vector3(180f, 90f, 90f);
+    public Vector3 position = new Vector3(10f, 0f, 10f); // 例如設到遠一點
+    public Vector3 rotation = Vector3.zero;
     public Vector3 scale = Vector3.one;
+
+    private GameObject baseFloor; // 追蹤基礎地板
 
     /// <summary>
     /// UI 按鈕呼叫的入口方法
@@ -42,6 +44,25 @@ public class ScenesImporter : MonoBehaviour
         {
             Debug.Log("📦 找到 GLB 檔案：" + glbPath);
             _ = LoadAndApply(glbPath);
+        }
+    }
+
+    void Start()
+    {
+        CreateBaseFloor();
+    }
+
+    private void CreateBaseFloor()
+    {
+        // 建立臨時基礎地板
+        baseFloor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        baseFloor.name = "TemporaryBaseFloor";
+        baseFloor.transform.position = new Vector3(0, 0, 0);
+        baseFloor.transform.localScale = new Vector3(10, 1, 10);
+
+        if (vertexColorMaterial != null)
+        {
+            baseFloor.GetComponent<MeshRenderer>().material = vertexColorMaterial;
         }
     }
 
@@ -81,7 +102,8 @@ public class ScenesImporter : MonoBehaviour
 
             // 設定 Transform
             root.transform.position = position;
-            root.transform.eulerAngles = rotation;
+            // 讓地板從 Z 軸轉到 Y+（X 軸轉 -90 度）
+            root.transform.eulerAngles = new Vector3(-90f, 0f, 0f);
             root.transform.localScale = scale;
 
             // 套用材質
@@ -97,6 +119,26 @@ public class ScenesImporter : MonoBehaviour
             else
             {
                 Debug.LogWarning("⚠ 未指定 vertexColorMaterial");
+            }
+
+            // 載入後自動加上 MeshCollider
+            MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
+            foreach (var mf in meshFilters)
+            {
+                if (mf.gameObject.GetComponent<Collider>() == null)
+                {
+                    var collider = mf.gameObject.AddComponent<MeshCollider>();
+                    collider.convex = false;
+                    collider.isTrigger = false; // 確保不是 trigger
+                }
+            }
+
+            // 模型載入完成後，移除基礎地板
+            if (baseFloor != null)
+            {
+                Destroy(baseFloor);
+                baseFloor = null;
+                Debug.Log("✅ 已移除臨時基礎地板");
             }
         }
         catch (System.Exception ex)
