@@ -12,13 +12,17 @@ public class ScenesImporter : MonoBehaviour
     public Material vertexColorMaterial;
 
     [Header("Transform 設定")]
-    public Vector3 position = new Vector3(-1.3f, 0f, -1.6f);
-    public Vector3 rotation = new Vector3(180f, 90f, 90f);
+    public Vector3 position = new Vector3(10f, 0f, 10f);
+    public Vector3 rotation = Vector3.zero;
     public Vector3 scale = Vector3.one;
 
-    /// <summary>
-    /// UI 按鈕呼叫的入口方法
-    /// </summary>
+    private GameObject baseFloor;
+
+    void Start()
+    {
+        CreateBaseFloor();
+    }
+
     public void ImportGlbModelsFromButton()
     {
         string fullPath = Path.Combine(Application.streamingAssetsPath, folderName);
@@ -45,21 +49,45 @@ public class ScenesImporter : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 非同步載入 glb 並套用 Transform 與材質
-    /// </summary>
+    private void CreateBaseFloor()
+    {
+        baseFloor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        baseFloor.name = "TemporaryBaseFloor";
+        baseFloor.transform.position = new Vector3(0, 0, 0);
+        baseFloor.transform.localScale = new Vector3(10, 1, 10);
+
+        // 🔁 設定圖層為 "Placeable"
+        baseFloor.layer = LayerMask.NameToLayer("Placeable");
+
+        var collider = baseFloor.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.isTrigger = false;
+            var physicsMaterial = new PhysicsMaterial
+            {
+                dynamicFriction = 0.6f,
+                staticFriction = 0.6f,
+                bounciness = 0,
+                frictionCombine = PhysicsMaterialCombine.Multiply,
+                bounceCombine = PhysicsMaterialCombine.Minimum
+            };
+            collider.material = physicsMaterial;
+        }
+
+        var rb = baseFloor.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+    }
+
     private async Task LoadAndApply(string path)
     {
         try
         {
             Debug.Log("🔄 開始載入：" + path);
 
-            // ✅ 先宣告 gltf
             GltfImport gltf = new GltfImport();
-
-            // ✅ 使用 file:// URI
             string uri = new System.Uri(path).AbsoluteUri;
-
             bool success = await gltf.Load(uri);
 
             if (!success)
@@ -68,23 +96,21 @@ public class ScenesImporter : MonoBehaviour
                 return;
             }
 
-            // ✅ 再宣告 root
             GameObject root = new GameObject(Path.GetFileNameWithoutExtension(path));
-
-            // ✅ 正確使用 async Instantiate
             bool instantiated = await gltf.InstantiateMainSceneAsync(root.transform);
+
             if (!instantiated)
             {
                 Debug.LogError("❌ InstantiateMainSceneAsync() 失敗");
                 return;
             }
 
-            // 設定 Transform
+            SetLayerRecursively(root, LayerMask.NameToLayer("Placeable"));
+
             root.transform.position = position;
-            root.transform.eulerAngles = rotation;
+            root.transform.eulerAngles = new Vector3(-90f, 0f, 0f);
             root.transform.localScale = scale;
 
-            // 套用材質
             if (vertexColorMaterial != null)
             {
                 MeshRenderer[] renderers = root.GetComponentsInChildren<MeshRenderer>(true);
@@ -94,9 +120,23 @@ public class ScenesImporter : MonoBehaviour
                 }
                 Debug.Log($"✅ 已套用材質至 {renderers.Length} 個 MeshRenderer：{root.name}");
             }
-            else
+
+            MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
+            foreach (var mf in meshFilters)
             {
-                Debug.LogWarning("⚠ 未指定 vertexColorMaterial");
+                if (mf.gameObject.GetComponent<Collider>() == null)
+                {
+                    var meshCollider = mf.gameObject.AddComponent<MeshCollider>();
+                    meshCollider.convex = false;
+                    meshCollider.isTrigger = false;
+                }
+            }
+
+            if (baseFloor != null)
+            {
+                Destroy(baseFloor);
+                baseFloor = null;
+                Debug.Log("✅ 已移除臨時基礎地板");
             }
         }
         catch (System.Exception ex)
@@ -104,5 +144,13 @@ public class ScenesImporter : MonoBehaviour
             Debug.LogError("🔥 匯入流程發生錯誤：" + ex.Message + "\n" + ex.StackTrace);
         }
     }
-
+    
+    private void SetLayerRecursively(GameObject obj, int layer)
+    {
+        obj.layer = layer;
+        foreach (Transform child in obj.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
+    }
 }
