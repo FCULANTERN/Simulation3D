@@ -4,103 +4,93 @@ using System.Collections;
 using System.IO;
 
 [RequireComponent(typeof(AudioSource))]
+
+
+
 public class WhisperRingRecorder : MonoBehaviour
 {
     public int sampleRate = 44100;
-    public float silenceThreshold = 0.03f;
+    public float silenceThreshold = 0.01f;
     public float silenceDuration = 1.0f;
-    public int preBufferSeconds = 1;
 
-    private AudioClip micClip;
-    private string filePath;
-    private bool isRecordingSegment = false;
-    private int segmentStartPosition = 0;
+    private AudioClip clip;
+    public GPTActionResponder gptResponder; // 拖到 Inspector 連接
+
+    private int micPosition = 0;
     private float silenceTimer = 0f;
+    private bool isRecording = false;
+    private string filePath;
 
     void Start()
     {
         filePath = Path.Combine(Application.persistentDataPath, "auto_record.wav");
-        micClip = Microphone.Start(null, true, 60, sampleRate);
-        Debug.Log("🎧 背景錄音已啟動");
-        StartCoroutine(MonitorMicrophone());
+        StartListening(); // 一開始就開始錄音
     }
 
-    IEnumerator MonitorMicrophone()
+    public void StartListening()
     {
-        while (true)
+        if (isRecording) return;
+
+        Debug.Log("🎙 開始錄音...");
+        clip = Microphone.Start(null, true, 60, sampleRate); // 最長錄60秒
+        isRecording = true;
+        silenceTimer = 0f;
+        micPosition = 0;
+        StartCoroutine(CheckSilence());
+    }
+
+    IEnumerator CheckSilence()
+    {
+        while (isRecording)
         {
-            int currentPos = Microphone.GetPosition(null);
-            if (currentPos < 0) { yield return null; continue; }
+            yield return new WaitForSeconds(0.1f);
 
-            int checkLength = 1024;
-            int start = currentPos - checkLength;
-            if (start < 0) start += micClip.samples;
+            int pos = Microphone.GetPosition(null);
+            if (pos <= 0 || pos == micPosition) continue;
 
-            float[] samples = new float[checkLength];
-            micClip.GetData(samples, start);
+            float[] samples = new float[pos - micPosition];
+            clip.GetData(samples, micPosition);
 
             float maxVolume = 0f;
-            foreach (var s in samples)
-                maxVolume = Mathf.Max(maxVolume, Mathf.Abs(s));
+            foreach (float sample in samples)
+                maxVolume = Mathf.Max(maxVolume, Mathf.Abs(sample));
 
-            if (!isRecordingSegment)
+            if (maxVolume < silenceThreshold)
             {
-                if (maxVolume > silenceThreshold)
+                silenceTimer += 0.1f;
+                if (silenceTimer >= silenceDuration)
                 {
-                    int bufferSamples = preBufferSeconds * sampleRate;
-                    segmentStartPosition = currentPos - bufferSamples;
-                    if (segmentStartPosition < 0) segmentStartPosition += micClip.samples;
-
-                    isRecordingSegment = true;
-                    silenceTimer = 0f;
-                    Debug.Log("🎙 偵測到聲音，開始錄音段");
+                    StopRecording();
+                    break;
                 }
             }
             else
             {
-                if (maxVolume < silenceThreshold)
-                {
-                    silenceTimer += 0.1f;
-                    if (silenceTimer >= silenceDuration)
-                    {
-                        int segmentEndPosition = Microphone.GetPosition(null);
-                        SaveAndSendSegment(segmentStartPosition, segmentEndPosition);
-                        isRecordingSegment = false;
-                        silenceTimer = 0f;
-                        Debug.Log("🛑 錄音段結束");
-                    }
-                }
-                else
-                {
-                    silenceTimer = 0f;
-                }
+                silenceTimer = 0f; // 有聲音 → 重置計時
             }
 
-            yield return new WaitForSeconds(0.1f);
+            micPosition = pos;
         }
     }
 
-    void SaveAndSendSegment(int startPos, int endPos)
+    void StopRecording()
     {
-        int totalSamples = endPos - startPos;
-        if (totalSamples < 0) totalSamples += micClip.samples;
+        if (!isRecording) return;
 
-        float[] data = new float[totalSamples * micClip.channels];
-        micClip.GetData(data, startPos);
+        isRecording = false;
+        Microphone.End(null);
+        Debug.Log("🛑 偵測靜音，停止錄音...");
 
-        AudioClip clip = AudioClip.Create("segment", totalSamples, micClip.channels, micClip.frequency, false);
-        clip.SetData(data, 0);
-
-        byte[] wav = WavUtility.FromAudioClip(clip);
-        File.WriteAllBytes(filePath, wav);
-        Debug.Log("💾 錄音儲存完成：" + filePath);
+        byte[] wavData = WavUtility.FromAudioClip(clip);
+        File.WriteAllBytes(filePath, wavData);
+        Debug.Log("💾 已儲存音訊：" + filePath);
 
         StartCoroutine(SendToWhisper(filePath));
     }
 
     IEnumerator SendToWhisper(string path)
     {
-        Debug.Log("📤 傳送至 Whisper...");
+        Debug.Log("📤 傳送音檔到 Whisper 伺服器...");
         byte[] audioBytes = File.ReadAllBytes(path);
 
         WWWForm form = new WWWForm();
@@ -111,10 +101,40 @@ public class WhisperRingRecorder : MonoBehaviour
             yield return request.SendWebRequest();
 
             if (request.result != UnityWebRequest.Result.Success)
-                Debug.LogError("❌ Whisper 回傳錯誤：" + request.error);
+            {
+                Debug.LogError("❌ 傳送失敗：" + request.error);
+            }
             else
-                Debug.Log("✅ Whisper 回應：" + request.downloadHandler.text);
+            {
+                string whisperJson = request.downloadHandler.text;
+                Debug.Log("✅ Whisper 回應：" + whisperJson);
+
+                string whisperText = "";
+                try
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(whisperJson, "\"text\"\\s*:\\s*\"(.*?)\"");
+                    if (match.Success)
+                    {
+                        whisperText = match.Groups[1].Value;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("⚠️ Whisper 回應中找不到 text 欄位");
+                    }
+                }
+                catch
+                {
+                    whisperText = "[解析 Whisper 回應失敗]";
+                }
+
+                if (gptResponder != null && !string.IsNullOrEmpty(whisperText))
+                {
+                    StartCoroutine(gptResponder.CallGPT(whisperText));
+                }
+            }
         }
+
+        // 🌀 完成後再次開始錄音
+        StartListening();
     }
 }
-

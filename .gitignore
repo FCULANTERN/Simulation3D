@@ -15,6 +15,7 @@ Assets/AssetStoreTools*
 *.svd
 *.pdb
 *.glb
+*.fbx
 *.mdb
 *.opendb
 *.VC.db
