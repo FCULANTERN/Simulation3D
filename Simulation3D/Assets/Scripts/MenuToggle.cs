@@ -31,5 +31,24 @@ public class MenuToggle : MonoBehaviour
         // 停用 / 啟用鏡頭控制
         if (cameraController != null)
             cameraController.allowCameraControl = !isActive;
+
+        if (isActive)
+        {
+            MoveMenuInFront();  // ← 顯示時移到面前
+        }
+    }
+
+    private void MoveMenuInFront()
+    {
+        if (menuUI == null) return;
+
+        Transform cam = Camera.main.transform;
+        Vector3 forward = cam.forward;
+        forward.y = 0;
+        forward.Normalize();
+
+        menuUI.transform.position = cam.position + forward * 1.2f + Vector3.up * 0.2f;
+        menuUI.transform.LookAt(cam);
+        menuUI.transform.Rotate(0, 180, 0);
     }
 }

@@ -104,8 +104,8 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
             ""bindings"": [
                 {
                     ""name"": """",
-                    ""id"": ""ec69be43-b521-4abe-be3a-600538551e5f"",
-                    ""path"": ""<Keyboard>/escape"",
+                    ""id"": ""9c349037-de84-4fb9-b23f-aa2fb344bc67"",
+                    ""path"": ""<XRController>{LeftHand}/{SecondaryButton}"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
