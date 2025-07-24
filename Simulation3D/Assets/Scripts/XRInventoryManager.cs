@@ -33,15 +33,6 @@ public class XRInventoryManager : MonoBehaviour
 
     void Update()
     {
-        if (toggleInventoryAction.action.WasPressedThisFrame())
-        {
-            isInventoryVisible = !isInventoryVisible;
-            inventoryUI.SetActive(isInventoryVisible);
-
-            if (isInventoryVisible)
-            MoveCanvasToHead(); // ← 顯示時移動到玩家前方
-        }
-
         if (triggerAction.action.WasPressedThisFrame() && currentPrefab != null && !isInventoryVisible)
         {
             Ray ray = new Ray(rayOrigin.position, rayOrigin.forward);
@@ -63,6 +54,14 @@ public class XRInventoryManager : MonoBehaviour
             inventoryUI.SetActive(false);
         }
     }
+
+    public void ShowInventory()
+    {
+        isInventoryVisible = true;
+        inventoryUI.SetActive(true);
+        MoveCanvasToHead();
+    }
+
 
     Vector3 SnapToGrid(Vector3 pos)
     {
