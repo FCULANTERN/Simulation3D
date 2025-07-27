@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using System.Collections.Generic;
+
 
 public class XRInventoryManager : MonoBehaviour
 {
@@ -53,6 +55,14 @@ public class XRInventoryManager : MonoBehaviour
             isInventoryVisible = false;
             inventoryUI.SetActive(false);
         }
+    }
+
+    public int RegisterModel(GameObject model)
+    {
+        var list = new List<GameObject>(availablePrefabs);
+        list.Add(model);
+        availablePrefabs = list.ToArray();
+        return availablePrefabs.Length - 1; // 回傳這個模型的 index
     }
 
     public void ShowInventory()
